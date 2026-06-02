@@ -23,7 +23,7 @@ XUNFEI_ASR_URL = "http://api.xfyun.cn/v1/service/v1/iat"
 # 4. 新用户通常有免费额度（约500万 tokens）
 
 DEEPSEEK = {
-    "api_key": "你的DeepSeek-API-Key",   # 格式: sk-xxxxxxxxxxxxxxxx
+    "api_key": "sk-abcc60c2107f4204a041a10eb953bf50",   # 格式: sk-xxxxxxxxxxxxxxxx
     "model": "deepseek-chat",            # 模型名称（deepseek-chat 便宜够用）
 }
 
