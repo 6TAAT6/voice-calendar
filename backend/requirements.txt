@@ -1,0 +1,9 @@
+# ===== Python 依赖包 =====
+# 用 pip install -r requirements.txt 一键安装所有依赖
+# 就像 C++ 里 #include <需要的库>
+
+fastapi>=0.100.0         # Web API 框架（处理 HTTP 请求）
+uvicorn>=0.23.0          # 服务器（让 FastAPI 跑起来）
+sqlalchemy>=2.0.0        # 数据库操作（用 Python 类代替 SQL 语句）
+pydantic>=2.0.0          # 数据验证（自动检查类型是否正确）
+python-multipart>=0.0.6  # 文件上传支持（后续语音文件上传用）
