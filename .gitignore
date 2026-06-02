@@ -9,3 +9,11 @@ img1.png
 img2.png
 img1_part*.png
 img2_part*.png
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.db
+.venv/
+venv/
