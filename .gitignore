@@ -1,0 +1,11 @@
+node_modules/
+dist/
+build/
+.env
+*.log
+.DS_Store
+Thumbs.db
+img1.png
+img2.png
+img1_part*.png
+img2_part*.png
