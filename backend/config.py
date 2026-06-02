@@ -5,10 +5,11 @@
 # 3. 在应用详情页找到以下三个值，填到引号里
 
 XUNFEI = {
-    "app_id": "a77c3da6",        # 应用ID，是一串数字
-    "api_key": "6a9d05e78987cc2d29fdc00194921c55",      # APIKey
-    "api_secret": "MzAwMDhlYmZmYTZjOTQ0NTFmNzcxYTc4", # APISecret
+    "app_id": "a77c3da6",
+    "api_key": "6a9d05e78987cc2d29fdc00194921c55",
+    "api_secret": "MzAwMDhlYmZmYTZjOTQ0NTFmNzcxYTc4",
 }
 
-# 讯飞语音听写 API 地址
-XUNFEI_ASR_URL = "https://raasr.xfyun.cn/api/short"
+# 讯飞语音听写 v1 REST API（短音频，≤60秒）
+# 文档：https://www.xfyun.cn/doc/asr/voicedictation/API.html
+XUNFEI_ASR_URL = "http://api.xfyun.cn/v1/service/v1/iat"
