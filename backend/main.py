@@ -4,7 +4,7 @@
 # 文档：http://localhost:8000/docs
 
 from datetime import datetime
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
+from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
@@ -66,14 +66,18 @@ def health_check():
 # ============================================
 
 @app.post("/speech/recognize")
-async def speech_recognize(audio: UploadFile = File(...)):
-    """接收音频 → 讯飞识别 → 返回文字"""
-    audio_bytes = await audio.read()
+async def speech_recognize(request: Request):
+    """接收 PCM 音频（16kHz/16bit/单声道）→ 讯飞识别 → 返回文字
+
+    前端发送格式：Content-Type: application/octet-stream, body = raw PCM bytes
+    音频要求：16kHz 采样率, 16bit, 单声道（前端 Web Audio API 已转换好）
+    """
+    audio_bytes = await request.body()
 
     if len(audio_bytes) == 0:
-        raise HTTPException(status_code=400, detail="音频文件为空")
+        raise HTTPException(status_code=400, detail="音频数据为空")
     if len(audio_bytes) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="音频文件过大")
+        raise HTTPException(status_code=413, detail="音频文件过大（最大10MB）")
 
     try:
         text = await recognize_audio(audio_bytes)

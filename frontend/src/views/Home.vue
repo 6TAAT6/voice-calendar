@@ -102,7 +102,7 @@ export default {
     // ---- 录音模块 ----
     const {
       isRecording,
-      audioBlob,
+      pcmData,
       error: recorderError,
       duration,
       startRecording,
@@ -140,15 +140,19 @@ export default {
     // ---- 步骤1: 点击录音按钮 ----
     async function handleMicClick() {
       if (isRecording.value) {
-        // 停止录音 → 发送识别
+        // 停止录音 → PCM 数据立即可用（实时采集，无需转换等待）
         stopRecording()
         phase.value = 'recognizing'
 
-        // 等待 audioBlob 填充
-        await new Promise((r) => setTimeout(r, 300))
+        // stopRecording() 同步返回，pcmData 已填充
+        if (!pcmData.value) {
+          error.value = recorderError.value || '录音数据为空，请重新录制'
+          phase.value = 'idle'
+          return
+        }
 
         try {
-          const result = await recognizeSpeech(audioBlob.value)
+          const result = await recognizeSpeech(pcmData.value)
           recognizedText.value = result.text
           phase.value = 'recognized'
         } catch (e) {

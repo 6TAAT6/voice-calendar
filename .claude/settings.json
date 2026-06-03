@@ -1,0 +1,8 @@
+{
+  "skills": {
+    "enabled": true,
+    "paths": [
+      ".claude/skills"
+    ]
+  }
+}

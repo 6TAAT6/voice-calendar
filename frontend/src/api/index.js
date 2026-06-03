@@ -3,15 +3,16 @@
 const BASE_URL = 'http://localhost:8000'
 
 /**
- * 发送音频到后端进行语音识别
+ * 发送 PCM 音频到后端进行语音识别
+ *
+ * @param {ArrayBuffer} pcmData - 前端已转换好的 PCM 数据（16kHz/16bit/单声道）
+ * @returns {Promise<{text: string, success: boolean}>}
  */
-export async function recognizeSpeech(audioBlob) {
-  const formData = new FormData()
-  formData.append('audio', audioBlob, 'recording.wav')
-
+export async function recognizeSpeech(pcmData) {
   const response = await fetch(`${BASE_URL}/speech/recognize`, {
     method: 'POST',
-    body: formData,
+    headers: { 'Content-Type': 'application/octet-stream' },
+    body: pcmData,
   })
   if (!response.ok) {
     const err = await response.json()
