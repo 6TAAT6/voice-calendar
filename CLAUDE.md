@@ -36,6 +36,12 @@ voice-calendar/
 | 语义解析 | DeepSeek Chat API | 性价比高，解析中文自然语言准确 |
 
 ## 🚀 启动方式
+
+**一键启动（推荐）**：
+- Windows: 双击 `start.bat`
+- Mac/Linux: `bash start.sh`
+
+**手动启动**：
 ```bash
 # 终端1 — 后端
 cd backend

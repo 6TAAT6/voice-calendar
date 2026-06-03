@@ -1,10 +1,11 @@
 # ===== 语音日历 API — 完整功能 =====
-# PR5: 加入 DeepSeek 语义解析 + 事件创建
-# 运行：uvicorn main:app --reload
+# PR8: 加入语音合成 + 冲突检测 + AI 对话修正
+# 运行：uvicorn main:app --reload    或    ../start.bat
 # 文档：http://localhost:8000/docs
 
-from datetime import datetime
-from fastapi import FastAPI, Request, HTTPException, Depends
+from datetime import datetime, timedelta
+from fastapi import FastAPI, Request, HTTPException, Depends, Query
+from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
@@ -12,12 +13,24 @@ from pydantic import BaseModel, Field
 from database import engine, Base, get_db
 from models import Event
 from speech import recognize_audio
-from nlp_parser import parse_schedule
+from nlp_parser import parse_schedule, nlp_correct
+from tts import synthesize, build_feedback_text, build_daily_brief_text
 
 
 # ---- 请求/响应模型 ----
 class ParseRequest(BaseModel):
     text: str = Field(..., min_length=1, description="用户说的话")
+
+
+class CorrectRequest(BaseModel):
+    """AI 对话修正：用户对上一次识别结果说"不对，改成xxx" """
+    original_text: str = Field(..., min_length=1, description="上一次识别/解析的文字")
+    correction_text: str = Field(..., min_length=1, description="用户说的修正指令")
+
+
+class SynthesizeRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=500, description="要合成的文字")
+    voice: str = Field(default="aisxping", description="发音人")
 
 
 class EventCreateRequest(BaseModel):
@@ -26,6 +39,7 @@ class EventCreateRequest(BaseModel):
     event_type: str = Field(default="其他")
     description: str = Field(default="")
     remind: bool = Field(default=True)
+    force_create: bool = Field(default=False, description="忽略冲突警告，强制创建")
 
 
 # ---- 启动时创建数据库表 ----
@@ -50,9 +64,6 @@ app.add_middleware(
 # ============================================
 # 全局异常处理 — 统一错误格式
 # ============================================
-
-from fastapi.responses import JSONResponse
-
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc: HTTPException):
@@ -133,15 +144,130 @@ async def nlp_parse(req: ParseRequest):
 
 
 # ============================================
+# 语音合成 TTS（PR8 新功能）
+# ============================================
+
+@app.post("/speech/synthesize")
+async def speech_synthesize(req: SynthesizeRequest):
+    """文字转语音 → 返回 MP3 音频流
+
+    输入: { "text": "已为您创建明天下午三点的产品评审会" }
+    返回: MP3 二进制数据（Content-Type: audio/mpeg）
+    """
+    if not req.text or not req.text.strip():
+        raise HTTPException(status_code=400, detail="合成文本为空")
+
+    try:
+        audio_bytes = await synthesize(req.text, req.voice)
+        return Response(
+            content=audio_bytes,
+            media_type="audio/mpeg",
+            headers={"X-Speech-Text": req.text[:100]},
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================
+# AI 对话修正（PR8 新功能 — 核心亮点）
+# ============================================
+
+@app.post("/nlp/correct")
+async def nlp_correct_endpoint(req: CorrectRequest):
+    """用户说"不对，改成xxx" → DeepSeek 理解修正语义 → 返回修正后的结构化日程
+
+    工作流程：
+      1. 用户第一次录音："明天下午开会" → 识别文字
+      2. 用户觉得不对，点击修正按钮，说："改成后天上午十点开产品评审会"
+      3. 后端把两段文字一起发给 DeepSeek，让它理解"修正"的意图
+      4. 返回修正后的完整结构化日程
+
+    输入:
+      { "original_text": "明天下午开会",
+        "correction_text": "改成后天上午十点开产品评审会" }
+
+    输出:
+      { "title": "产品评审会", "event_time": "2026-06-05T10:00:00", ... }
+    """
+    now = datetime.now().strftime("%Y年%m月%d日 %H:%M")
+
+    try:
+        result = await nlp_correct(
+            original_text=req.original_text,
+            correction_text=req.correction_text,
+            current_datetime=now,
+        )
+        return {"success": True, **result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================
 # 事件 CRUD（PR3 核心功能）
+#   PR8: 增加冲突检测 + 重复检测
 # ============================================
 
 @app.post("/events", status_code=201)
 def create_event(req: EventCreateRequest, db: Session = Depends(get_db)):
-    """创建事件（前端解析完直接调用）"""
+    """创建事件（含智能冲突检测）
+
+    如果检测到冲突或重复，返回 warnings 列表 + should_confirm=true
+    前端可以显示警告，让用户确认后再调用 force_create=true 强制创建
+    """
+    event_time = datetime.fromisoformat(req.event_time)
+    warnings = []
+
+    # ---- 检测：完全重复（相同标题 + 相同日期）----
+    same_date_start = event_time.replace(hour=0, minute=0, second=0)
+    same_date_end = same_date_start + timedelta(days=1)
+    existing_same_day = (
+        db.query(Event)
+        .filter(
+            Event.title == req.title,
+            Event.event_time >= same_date_start,
+            Event.event_time < same_date_end,
+        )
+        .first()
+    )
+    if existing_same_day:
+        warnings.append({
+            "type": "duplicate",
+            "message": f"当天已有「{req.title}」（{existing_same_day.event_time.strftime('%H:%M')}），建议修改标题或删除旧事件",
+            "conflict_event_id": existing_same_day.id,
+        })
+
+    # ---- 检测：时间冲突（前后 30 分钟内已有事件）----
+    conflict_window = timedelta(minutes=30)
+    nearby_start = event_time - conflict_window
+    nearby_end = event_time + conflict_window
+    conflicting = (
+        db.query(Event)
+        .filter(
+            Event.id != (existing_same_day.id if existing_same_day else 0),
+            Event.event_time >= nearby_start,
+            Event.event_time <= nearby_end,
+        )
+        .first()
+    )
+    if conflicting:
+        warnings.append({
+            "type": "conflict",
+            "message": f"⚠️ {conflicting.event_time.strftime('%H:%M')} 已有「{conflicting.title}」，与此事件时间接近（{event_time.strftime('%H:%M')}）",
+            "conflict_event_id": conflicting.id,
+        })
+
+    # 有冲突且未强制 → 只返回警告，不创建
+    if warnings and not req.force_create:
+        return {
+            "success": False,
+            "should_confirm": True,
+            "warnings": warnings,
+        }
+
+    # 创建事件
     db_event = Event(
         title=req.title,
-        event_time=datetime.fromisoformat(req.event_time),
+        event_time=event_time,
         description=req.description,
         remind=req.remind,
         event_type=req.event_type,
@@ -159,6 +285,7 @@ def create_event(req: EventCreateRequest, db: Session = Depends(get_db)):
         "remind": db_event.remind,
         "completed": db_event.completed,
         "created_at": db_event.created_at.isoformat(),
+        "warnings": warnings if warnings else None,
     }
 
 

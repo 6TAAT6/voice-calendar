@@ -134,3 +134,96 @@ async def parse_schedule(user_text: str, current_datetime: str = "") -> dict:
         raise Exception(f"DeepSeek 返回的 JSON 缺少必填字段: {parsed}")
 
     return parsed
+
+
+# ══════════════════════════════════════════════════
+# AI 对话修正 — "不对，改成xxx"
+# ══════════════════════════════════════════════════
+
+CORRECT_PROMPT = """你是一个智能日程修正助手。用户之前说了一段日程描述，然后又说了一段修正指令。
+
+你的任务：
+1. 理解用户的修正意图（比如"改成后天"、"不是开会是吃饭"、"时间改成上午"等）
+2. 把修正应用到原始描述上，得出最终的正确日程
+3. 输出修正后的结构化 JSON
+
+原始描述：{original_text}
+修正指令：{correction_text}
+
+规则和 parse_schedule 一样：
+- 提取 title、event_time（ISO 8601）、event_type、description、remind
+- 只返回 JSON，不要其他文字
+
+当前日期时间：{current_datetime}"""
+
+
+async def nlp_correct(
+    original_text: str,
+    correction_text: str,
+    current_datetime: str = "",
+) -> dict:
+    """AI 对话修正：理解用户说的"不对，改成xxx"，合并到原始日程
+
+    Args:
+        original_text: 第一次识别/解析的文字
+        correction_text: 用户修正说的话
+        current_datetime: 当前日期时间
+
+    Returns:
+        修正后的结构化日程
+    """
+    api_key = DEEPSEEK["api_key"]
+    model = DEEPSEEK["model"]
+
+    if not api_key:
+        raise Exception("请先在 backend/.env 中配置 DEEPSEEK_API_KEY（参考 .env.example）")
+
+    messages = [
+        {
+            "role": "system",
+            "content": CORRECT_PROMPT.format(
+                original_text=original_text,
+                correction_text=correction_text,
+                current_datetime=current_datetime,
+            ),
+        },
+        {
+            "role": "user",
+            "content": "请输出修正后的日程 JSON。",
+        },
+    ]
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    body = {
+        "model": model,
+        "messages": messages,
+        "temperature": 0.1,
+        "max_tokens": 500,
+    }
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(DEEPSEEK_API_URL, headers=headers, json=body)
+
+    if response.status_code != 200:
+        raise Exception(f"DeepSeek API 错误 (HTTP {response.status_code}): {response.text}")
+
+    result = response.json()
+    content = result["choices"][0]["message"]["content"].strip()
+
+    # 去掉 markdown 代码块
+    if content.startswith("```"):
+        content = re.sub(r"^```(?:json)?\s*", "", content)
+        content = re.sub(r"\s*```$", "", content)
+
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError:
+        raise Exception(f"DeepSeek 修正结果无法解析为 JSON: {content}")
+
+    if "title" not in parsed or "event_time" not in parsed:
+        raise Exception(f"修正结果缺少必填字段: {parsed}")
+
+    return parsed

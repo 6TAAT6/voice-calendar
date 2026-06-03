@@ -1,6 +1,7 @@
 <!--
   Home.vue — 语音日历主页面
-  完整流程：录音 → 语音识别 → NLP解析 → 创建日程
+  完整流程：录音 → 语音识别 → NLP解析 → TTS语音反馈 → 创建日程
+  PR8 新增：AI 对话修正 + 冲突检测 + 语音播报
 -->
 <template>
   <div class="home">
@@ -31,12 +32,26 @@
         <p class="processing-text">正在识别语音...</p>
       </div>
 
-      <!-- 阶段3: 识别完成，显示文字 -->
-      <div v-else-if="phase === 'recognized'" class="result-box">
+      <!-- 阶段3: 识别完成，显示文字 + 修正入口 -->
+      <div v-else-if="phase === 'recognized' || phase === 'correcting'" class="result-box">
         <div class="result-label">识别结果：</div>
         <div class="result-text">{{ recognizedText }}</div>
-        <div class="result-actions">
+
+        <!-- AI 对话修正：说"不对，改成xxx" -->
+        <div v-if="phase === 'correcting'" class="correct-box">
+          <p class="correct-hint">🔧 请说出修正指令，例如："改成后天上午十点"</p>
+          <div class="correct-actions">
+            <button class="btn btn-sm" :class="{ recording: isRecording }" @click="handleCorrectMic">
+              {{ isRecording ? '⏹️ 停止修正' : '🎤 说出修正' }}
+            </button>
+            <button class="btn btn-sm btn-outline" @click="phase = 'recognized'">取消修正</button>
+          </div>
+          <p v-if="phase === 'recognizing'" class="processing-text">AI 正在理解修正...</p>
+        </div>
+
+        <div v-else class="result-actions">
           <button class="btn btn-primary" @click="handleParse">🤖 智能解析</button>
+          <button class="btn btn-outline" @click="startCorrection">✏️ 语音修正</button>
           <button class="btn btn-outline" @click="retry">🔄 重新录音</button>
         </div>
       </div>
@@ -58,18 +73,31 @@
             <span class="key">📝 备注</span>{{ parsedEvent.description }}
           </div>
         </div>
-        <div class="result-actions">
-          <button class="btn btn-primary" @click="handleCreate" :disabled="creating">
+
+        <!-- 冲突警告 -->
+        <div v-if="conflictWarnings.length > 0" class="conflict-warning">
+          <div v-for="(w, i) in conflictWarnings" :key="i" class="warning-item">
+            {{ w.message }}
+          </div>
+          <div class="conflict-actions">
+            <button class="btn btn-primary" @click="handleCreate(true)">仍要创建</button>
+            <button class="btn btn-outline" @click="retry">取消</button>
+          </div>
+        </div>
+
+        <div v-else class="result-actions">
+          <button class="btn btn-primary" @click="handleCreate(false)" :disabled="creating">
             {{ creating ? '创建中...' : '✅ 确认创建' }}
           </button>
           <button class="btn btn-outline" @click="retry">🔄 重新录音</button>
         </div>
       </div>
 
-      <!-- 阶段6: 创建成功 -->
+      <!-- 阶段6: 创建成功 + 语音反馈 -->
       <div v-else-if="phase === 'done'" class="done-box">
         <div class="done-icon">🎉</div>
         <p class="done-text">日程已创建！</p>
+        <p v-if="ttsPlaying" class="tts-status">🔊 正在语音播报...</p>
         <div class="result-actions">
           <router-link to="/calendar" class="btn btn-primary">📅 查看日程</router-link>
           <button class="btn btn-outline" @click="retry">➕ 继续添加</button>
@@ -94,7 +122,7 @@
 <script>
 import { ref, computed } from 'vue'
 import { useAudioRecorder } from '../composables/useAudioRecorder'
-import { recognizeSpeech, parseText, createEvent } from '../api/index'
+import { recognizeSpeech, parseText, correctSchedule, synthesizeSpeech, createEvent } from '../api/index'
 
 export default {
   name: 'Home',
@@ -111,12 +139,13 @@ export default {
     } = useAudioRecorder()
 
     // ---- 状态管理 ----
-    // idle → recording → recognizing → recognized → parsing → confirm → done
     const phase = ref('idle')
     const recognizedText = ref('')
     const parsedEvent = ref({})
+    const conflictWarnings = ref([])
     const error = ref('')
     const creating = ref(false)
+    const ttsPlaying = ref(false)
 
     // ---- 计时器格式化 ----
     const durationText = computed(() => {
@@ -137,26 +166,48 @@ export default {
       return `${y}年${M}月${day}日 周${week} ${h}:${m}`
     }
 
-    // ---- 错误翻译：把技术错误转成人话 ----
+    // ---- 错误翻译 ----
     function translateError(err) {
       const msg = err.message || String(err)
-      if (msg.includes('server read msg timeout') || msg.includes('timeout')) return '网络超时或录音没有语音，请再说一遍'
+      if (msg.includes('timeout')) return '网络超时，请确认后端已启动后重试'
       if (msg.includes('illegal access') || msg.includes('Unauthorized') || msg.includes('401')) return '讯飞授权失败，请检查密钥配置'
-      if (msg.includes('Websocket closed') || msg.includes('fin=1')) return '语音服务器连接中断，请重试'
+      if (msg.includes('Websocket closed')) return '语音服务器连接中断，请重试'
       if (msg.includes('Failed to fetch') || msg.includes('NetworkError')) return '无法连接服务器，请确认后端已启动'
-      if (msg.includes('音频解码失败')) return msg
       if (msg.includes('DeepSeek')) return 'AI 解析失败，请再说一遍或换个说法'
+      if (msg.includes('讯飞')) return msg
       return msg || '操作失败，请重试'
     }
 
-    // ---- 步骤1: 点击录音按钮 ----
+    /**
+     * 播放语音反馈
+     */
+    async function playVoiceFeedback(text) {
+      try {
+        ttsPlaying.value = true
+        const audioBlob = await synthesizeSpeech(text)
+        const audioUrl = URL.createObjectURL(audioBlob)
+        const audio = new Audio(audioUrl)
+        audio.onended = () => {
+          ttsPlaying.value = false
+          URL.revokeObjectURL(audioUrl)
+        }
+        audio.onerror = () => {
+          ttsPlaying.value = false
+          URL.revokeObjectURL(audioUrl)
+        }
+        await audio.play()
+      } catch (e) {
+        ttsPlaying.value = false
+        console.warn('语音播报失败（不影响功能）:', e.message)
+      }
+    }
+
+    // ---- 步骤1: 录音 → 识别 ----
     async function handleMicClick() {
       if (isRecording.value) {
-        // 停止录音 → PCM 数据立即可用（实时采集，无需转换等待）
         stopRecording()
         phase.value = 'recognizing'
 
-        // stopRecording() 同步返回，pcmData 已填充
         if (!pcmData.value) {
           error.value = recorderError.value || '录音数据为空，请重新录制'
           phase.value = 'idle'
@@ -172,14 +223,55 @@ export default {
           phase.value = 'idle'
         }
       } else {
-        // 开始录音
         await startRecording()
         if (!isRecording.value) {
-          // 权限被拒
           error.value = recorderError.value || '无法启动录音'
           phase.value = 'idle'
         } else {
           phase.value = 'recording'
+        }
+      }
+    }
+
+    // ---- AI 对话修正 ----
+    function startCorrection() {
+      phase.value = 'correcting'
+    }
+
+    async function handleCorrectMic() {
+      if (isRecording.value) {
+        stopRecording()
+        const prev = phase.value
+        phase.value = 'recognizing'
+
+        if (!pcmData.value) {
+          error.value = recorderError.value || '修正录音为空，请重试'
+          phase.value = prev
+          return
+        }
+
+        try {
+          const result = await recognizeSpeech(pcmData.value)
+          const correction = result.text
+          if (!correction) {
+            error.value = '未识别到修正内容，请重说'
+            phase.value = prev
+            return
+          }
+          // 调用 AI 修正
+          const corrected = await correctSchedule(recognizedText.value, correction)
+          parsedEvent.value = corrected
+          recognizedText.value = correction
+          phase.value = 'confirm'
+        } catch (e) {
+          error.value = translateError(e)
+          phase.value = 'correcting'
+        }
+      } else {
+        await startRecording()
+        if (!isRecording.value) {
+          error.value = recorderError.value || '无法启动录音'
+          phase.value = 'correcting'
         }
       }
     }
@@ -193,24 +285,40 @@ export default {
         phase.value = 'confirm'
       } catch (e) {
         error.value = translateError(e)
-        phase.value = 'recognized'  // 回到文字确认页
+        phase.value = 'recognized'
       }
     }
 
     // ---- 步骤3: 创建事件 ----
-    async function handleCreate() {
+    async function handleCreate(forceCreate) {
       creating.value = true
       try {
-        await createEvent({
+        const result = await createEvent({
           title: parsedEvent.value.title,
           event_time: parsedEvent.value.event_time,
           event_type: parsedEvent.value.event_type || '其他',
           description: parsedEvent.value.description || '',
           remind: parsedEvent.value.remind !== false,
-        })
+        }, forceCreate)
+
+        // 检查冲突
+        if (!result.success && result.should_confirm) {
+          conflictWarnings.value = result.warnings || []
+          creating.value = false
+          return
+        }
+
+        conflictWarnings.value = []
         phase.value = 'done'
+
+        // 语音反馈：播报创建结果
+        const dt = new Date(parsedEvent.value.event_time)
+        const timeStr = `${dt.getMonth() + 1}月${dt.getDate()}日 ${String(dt.getHours()).padStart(2, '0')}点${String(dt.getMinutes()).padStart(2, '0')}分`
+        const feedback = `已为您创建${timeStr}的${parsedEvent.value.title}`
+        playVoiceFeedback(feedback)
+
       } catch (e) {
-        error.value = e.message || '创建事件失败'
+        error.value = translateError(e)
       } finally {
         creating.value = false
       }
@@ -221,26 +329,16 @@ export default {
       phase.value = 'idle'
       recognizedText.value = ''
       parsedEvent.value = {}
+      conflictWarnings.value = []
       cancelRecording()
     }
 
     return {
-      // 状态
-      isRecording,
-      duration,
-      phase,
-      recognizedText,
-      parsedEvent,
-      error,
-      creating,
-      // 格式化
-      durationText,
-      formatTime,
-      // 方法
-      handleMicClick,
-      handleParse,
-      handleCreate,
-      retry,
+      isRecording, duration, phase, recognizedText, parsedEvent,
+      conflictWarnings, error, creating, ttsPlaying,
+      durationText, formatTime,
+      handleMicClick, handleParse, handleCreate, handleCorrectMic,
+      startCorrection, retry,
     }
   },
 }
@@ -263,27 +361,21 @@ h1 { font-size: 28px; color: #333; }
 
 /* ===== 录音按钮 ===== */
 .mic-btn {
-  width: 180px;
-  height: 180px;
+  width: 180px; height: 180px;
   border-radius: 50%;
   border: 4px solid #4a90d9;
   background: #e8f0fe;
   cursor: pointer;
   color: #4a90d9;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
   gap: 8px;
   transition: all 0.3s;
   user-select: none;
 }
 .mic-btn:hover { background: #4a90d9; color: white; }
-
 .mic-btn.recording {
-  border-color: #e74c3c;
-  background: #ffe8e6;
-  color: #e74c3c;
+  border-color: #e74c3c; background: #ffe8e6; color: #e74c3c;
   animation: pulse 1.5s ease-in-out infinite;
 }
 @keyframes pulse {
@@ -294,20 +386,13 @@ h1 { font-size: 28px; color: #333; }
 .mic-label { font-size: 14px; }
 
 /* 计时器 */
-.timer {
-  margin-top: 16px;
-  font-size: 28px;
-  font-weight: bold;
-  color: #e74c3c;
-  font-family: 'Courier New', monospace;
-}
+.timer { margin-top: 16px; font-size: 28px; font-weight: bold; color: #e74c3c; font-family: 'Courier New', monospace; }
 .hint { color: #999; margin-top: 16px; font-size: 14px; }
 
 /* 加载动画 */
 .loading-box { padding: 40px; }
 .spinner {
-  width: 40px;
-  height: 40px;
+  width: 40px; height: 40px;
   margin: 0 auto 16px;
   border: 4px solid #e0e0e0;
   border-top-color: #4a90d9;
@@ -319,90 +404,86 @@ h1 { font-size: 28px; color: #333; }
 
 /* 识别结果 / 确认 */
 .result-box {
-  background: #f0f9ff;
-  border: 1px solid #bae6fd;
-  border-radius: 12px;
-  padding: 24px;
+  background: #f0f9ff; border: 1px solid #bae6fd;
+  border-radius: 12px; padding: 24px;
 }
 .result-label { font-size: 13px; color: #888; margin-bottom: 8px; text-align: left; }
 .result-text {
-  font-size: 20px;
-  color: #333;
-  padding: 16px;
-  background: white;
-  border-radius: 8px;
-  margin-bottom: 20px;
+  font-size: 20px; color: #333;
+  padding: 16px; background: white;
+  border-radius: 8px; margin-bottom: 20px;
 }
+
+/* AI 修正区域 */
+.correct-box {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;
+}
+.correct-hint { color: #92400e; font-size: 14px; margin-bottom: 10px; }
+.correct-actions { display: flex; gap: 8px; justify-content: center; }
 
 /* 解析详情 */
 .parsed-detail {
-  text-align: left;
-  background: white;
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 20px;
+  text-align: left; background: white;
+  border-radius: 8px; padding: 16px; margin-bottom: 20px;
 }
-.field {
-  padding: 6px 0;
-  font-size: 15px;
-  color: #333;
-  border-bottom: 1px solid #f0f0f0;
-}
+.field { padding: 6px 0; font-size: 15px; color: #333; border-bottom: 1px solid #f0f0f0; }
 .field:last-child { border-bottom: none; }
 .key { display: inline-block; width: 70px; color: #888; font-size: 14px; }
 
+/* 冲突警告 */
+.conflict-warning {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px;
+}
+.warning-item { color: #dc2626; font-size: 14px; padding: 4px 0; }
+.conflict-actions { display: flex; gap: 8px; justify-content: center; margin-top: 10px; }
+
 /* 按钮 */
-.result-actions { display: flex; gap: 12px; justify-content: center; }
+.result-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 .btn {
-  padding: 10px 24px;
-  border-radius: 8px;
-  font-size: 15px;
-  cursor: pointer;
-  border: none;
+  padding: 10px 24px; border-radius: 8px;
+  font-size: 15px; cursor: pointer; border: none;
   transition: opacity 0.2s;
-  text-decoration: none;
-  display: inline-block;
+  text-decoration: none; display: inline-block;
 }
 .btn:hover { opacity: 0.85; }
 .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.btn-sm {
+  padding: 8px 16px; border-radius: 6px;
+  font-size: 13px; cursor: pointer;
+  background: #f0f0f0; border: 1px solid #ccc; color: #333;
+}
+.btn-sm.recording { background: #ffe8e6; border-color: #e74c3c; color: #e74c3c; }
 .btn-primary { background: #4a90d9; color: white; }
 .btn-outline { background: white; color: #4a90d9; border: 1px solid #4a90d9; }
 
 /* 创建成功 */
 .done-box {
-  background: #f0fdf4;
-  border: 1px solid #bbf7d0;
-  border-radius: 12px;
-  padding: 32px;
+  background: #f0fdf4; border: 1px solid #bbf7d0;
+  border-radius: 12px; padding: 32px;
 }
 .done-icon { font-size: 48px; }
 .done-text { font-size: 18px; color: #16a34a; margin: 12px 0 20px; }
+.tts-status { color: #4a90d9; font-size: 14px; }
 
 /* 错误 */
 .error-toast {
-  margin-top: 16px;
-  padding: 12px 16px;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  border-radius: 8px;
-  color: #dc2626;
-  font-size: 14px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  margin-top: 16px; padding: 12px 16px;
+  background: #fef2f2; border: 1px solid #fecaca;
+  border-radius: 8px; color: #dc2626; font-size: 14px;
+  display: flex; justify-content: space-between; align-items: center;
 }
 .close-btn { background: none; border: none; font-size: 20px; cursor: pointer; color: #dc2626; }
 
 /* 快捷入口 */
 .quick-links { display: flex; gap: 16px; justify-content: center; margin-top: 40px; }
 .card {
-  padding: 20px 30px;
-  background: #f8f9fa;
-  border-radius: 12px;
-  text-decoration: none;
-  color: #333;
-  font-size: 16px;
-  border: 1px solid #e0e0e0;
+  padding: 20px 30px; background: #f8f9fa;
+  border-radius: 12px; text-decoration: none; color: #333;
+  font-size: 16px; border: 1px solid #e0e0e0;
   transition: transform 0.2s;
 }
 .card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }

@@ -27,6 +27,10 @@ XUNFEI = {
 # 文档：https://www.xfyun.cn/doc/asr/voicedictation/API.html
 XUNFEI_ASR_URL = "wss://ws-api.xfyun.cn/v2/iat"
 
+# 讯飞语音合成 TTS v2 WebSocket 地址
+# 文档：https://www.xfyun.cn/doc/tts/online_tts/API.html
+XUNFEI_TTS_URL = "wss://tts-api.xfyun.cn/v2/tts"
+
 
 # ===== DeepSeek 大模型配置（语义解析）=====
 # 获取步骤：https://platform.deepseek.com/ → API Keys
