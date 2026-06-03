@@ -1,11 +1,31 @@
+# ===== 依赖 & 构建 =====
 node_modules/
 dist/
 build/
+frontend/.vite/
+*.egg-info/
+__pycache__/
+*.pyc
+
+# ===== 密钥（绝对不能提交）=====
 .env
+backend/.env
+*.pem
+*.key
+
+# ===== 数据库 & 临时文件 =====
+*.db
+*.sqlite
+*.sqlite3
+*.pcm
+*.bin
+*.wav
+
+# ===== 日志 & 缓存 =====
 *.log
 .DS_Store
 Thumbs.db
-img1.png
-img2.png
-img1_part*.png
-img2_part*.png
+
+# ===== IDE =====
+.vscode/
+.idea/

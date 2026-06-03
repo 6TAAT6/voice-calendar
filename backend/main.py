@@ -48,6 +48,29 @@ app.add_middleware(
 
 
 # ============================================
+# 全局异常处理 — 统一错误格式
+# ============================================
+
+from fastapi.responses import JSONResponse
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"success": False, "error": exc.detail},
+    )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={"success": False, "error": str(exc)},
+    )
+
+
+# ============================================
 # 健康检查
 # ============================================
 

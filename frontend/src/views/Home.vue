@@ -137,6 +137,18 @@ export default {
       return `${y}年${M}月${day}日 周${week} ${h}:${m}`
     }
 
+    // ---- 错误翻译：把技术错误转成人话 ----
+    function translateError(err) {
+      const msg = err.message || String(err)
+      if (msg.includes('server read msg timeout') || msg.includes('timeout')) return '网络超时或录音没有语音，请再说一遍'
+      if (msg.includes('illegal access') || msg.includes('Unauthorized') || msg.includes('401')) return '讯飞授权失败，请检查密钥配置'
+      if (msg.includes('Websocket closed') || msg.includes('fin=1')) return '语音服务器连接中断，请重试'
+      if (msg.includes('Failed to fetch') || msg.includes('NetworkError')) return '无法连接服务器，请确认后端已启动'
+      if (msg.includes('音频解码失败')) return msg
+      if (msg.includes('DeepSeek')) return 'AI 解析失败，请再说一遍或换个说法'
+      return msg || '操作失败，请重试'
+    }
+
     // ---- 步骤1: 点击录音按钮 ----
     async function handleMicClick() {
       if (isRecording.value) {
@@ -156,7 +168,7 @@ export default {
           recognizedText.value = result.text
           phase.value = 'recognized'
         } catch (e) {
-          error.value = e.message || '语音识别失败，请重试'
+          error.value = translateError(e)
           phase.value = 'idle'
         }
       } else {
@@ -180,7 +192,7 @@ export default {
         parsedEvent.value = result
         phase.value = 'confirm'
       } catch (e) {
-        error.value = e.message || '语义解析失败，请重试'
+        error.value = translateError(e)
         phase.value = 'recognized'  // 回到文字确认页
       }
     }

@@ -23,10 +23,10 @@ from wsgiref.handlers import format_date_time
 import websocket
 import _thread
 
-from config import XUNFEI
+from config import XUNFEI, XUNFEI_ASR_URL
 
-# 讯飞语音听写 v2 WebSocket 地址
-IAT_WS_URL = "wss://ws-api.xfyun.cn/v2/iat"
+# 讯飞语音听写 v2 WebSocket 地址（从配置读取）
+IAT_WS_URL = XUNFEI_ASR_URL
 
 # 分帧发送参数
 FRAME_SIZE = 8000     # 每帧字节数
@@ -50,7 +50,7 @@ def _build_url() -> str:
 
     # 检查配置
     if app_id == "你的APPID":
-        raise ValueError("请先在 backend/config.py 配置讯飞 AppID/APIKey/APISecret")
+        raise ValueError("请先在 backend/.env 中配置 XUNFEI_APP_ID/XUNFEI_API_KEY/XUNFEI_API_SECRET（参考 .env.example）")
 
     # RFC 1123 时间
     now = datetime.now()

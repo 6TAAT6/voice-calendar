@@ -73,8 +73,8 @@ async def parse_schedule(user_text: str, current_datetime: str = "") -> dict:
     model = DEEPSEEK["model"]
 
     # 检查是否已配置
-    if api_key == "你的DeepSeek-API-Key":
-        raise Exception("请先在 backend/config.py 中配置 DeepSeek API Key")
+    if not api_key:
+        raise Exception("请先在 backend/.env 中配置 DEEPSEEK_API_KEY（参考 .env.example）")
 
     # 构造消息列表
     messages = [
