@@ -32,6 +32,11 @@ SYSTEM_PROMPT = """你是一个智能日程解析助手。用户会用中文口�
 3. 提取类型（event_type）：会议/运动/生日/约会/提醒/购物/就医/旅行/学习/其他
 4. 提取备注（description）：除了标题和时间以外的补充信息
 5. 判断是否需要提醒（remind）：大多数情况设为 true
+6. 识别重复规则（recurrence）：
+   - "每天早上跑步" → recurrence: "daily"
+   - "每周一开会" → recurrence: "weekly"
+   - "每月1号发工资" → recurrence: "monthly"
+   - 没有重复描述 → recurrence: "none"
 
 你必须只返回一个合法的 JSON 对象，不要包含任何其他文字：
 {
@@ -39,7 +44,8 @@ SYSTEM_PROMPT = """你是一个智能日程解析助手。用户会用中文口�
   "event_time": "yyyy-MM-ddTHH:mm:ss",
   "event_type": "类型",
   "description": "备注",
-  "remind": true
+  "remind": true,
+  "recurrence": "none"
 }
 
 当前日期时间：{current_datetime}"""

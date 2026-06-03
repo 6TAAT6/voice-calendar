@@ -32,6 +32,7 @@ class Event(Base):
     remind = Column(Boolean, default=False)              # 是否需要提醒，默认不需要
     completed = Column(Boolean, default=False)           # 是否已完成，默认未完成
     event_type = Column(String(50), default="其他")      # 事件类型：会议/运动/生日/其他
+    recurrence = Column(String(20), default="none")       # 重复规则：none/daily/weekly/monthly
     created_at = Column(DateTime, default=datetime.now)  # 创建时间，自动填充
 
     # __repr__ = 打印对象时的显示格式（调试用）

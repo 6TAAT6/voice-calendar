@@ -39,6 +39,7 @@ class EventCreateRequest(BaseModel):
     event_type: str = Field(default="其他")
     description: str = Field(default="")
     remind: bool = Field(default=True)
+    recurrence: str = Field(default="none", description="重复规则: none/daily/weekly/monthly")
     force_create: bool = Field(default=False, description="忽略冲突警告，强制创建")
 
 
@@ -273,6 +274,7 @@ def create_event(req: EventCreateRequest, db: Session = Depends(get_db)):
         description=req.description,
         remind=req.remind,
         event_type=req.event_type,
+        recurrence=req.recurrence,
     )
     db.add(db_event)
     db.commit()
@@ -286,6 +288,7 @@ def create_event(req: EventCreateRequest, db: Session = Depends(get_db)):
         "description": db_event.description,
         "remind": db_event.remind,
         "completed": db_event.completed,
+        "recurrence": db_event.recurrence,
         "created_at": db_event.created_at.isoformat(),
         "warnings": warnings if warnings else None,
     }
@@ -298,6 +301,7 @@ class EventUpdateRequest(BaseModel):
     description: str | None = None
     remind: bool | None = None
     completed: bool | None = None
+    recurrence: str | None = None
 
 
 @app.put("/events/{event_id}")
@@ -315,45 +319,36 @@ def update_event(event_id: int, req: EventUpdateRequest, db: Session = Depends(g
 
     db.commit()
     db.refresh(db_event)
-    return {
-        "id": db_event.id,
-        "title": db_event.title,
-        "event_time": db_event.event_time.isoformat(),
-        "event_type": db_event.event_type,
-        "description": db_event.description,
-        "remind": db_event.remind,
-        "completed": db_event.completed,
-        "created_at": db_event.created_at.isoformat(),
-    }
+    return _event_to_dict(db_event)
 
 
 @app.get("/events")
 def list_events(
-    event_type: str | None = None,
-    remind_only: bool = False,
+    search: str | None = Query(None, description="搜索关键词"),
+    event_type: str | None = Query(None, description="按类型筛选"),
+    remind_only: bool = Query(False, description="只看提醒事件"),
+    start_date: str | None = Query(None, description="开始日期 yyyy-MM-dd"),
+    end_date: str | None = Query(None, description="结束日期 yyyy-MM-dd"),
     db: Session = Depends(get_db),
 ):
-    """获取所有事件"""
+    """获取事件列表（支持搜索、筛选、日期范围）"""
     query = db.query(Event)
+    if search:
+        query = query.filter(
+            (Event.title.ilike(f"%{search}%")) |
+            (Event.description.ilike(f"%{search}%"))
+        )
     if event_type:
         query = query.filter(Event.event_type == event_type)
     if remind_only:
         query = query.filter(Event.remind == True)
+    if start_date:
+        query = query.filter(Event.event_time >= datetime.fromisoformat(start_date))
+    if end_date:
+        query = query.filter(Event.event_time <= datetime.fromisoformat(end_date + "T23:59:59"))
 
     events = query.order_by(Event.event_time.asc()).all()
-    return [
-        {
-            "id": e.id,
-            "title": e.title,
-            "event_time": e.event_time.isoformat(),
-            "event_type": e.event_type,
-            "description": e.description,
-            "remind": e.remind,
-            "completed": e.completed,
-            "created_at": e.created_at.isoformat(),
-        }
-        for e in events
-    ]
+    return [_event_to_dict(e) for e in events]
 
 
 @app.delete("/events/{event_id}", status_code=204)
@@ -365,3 +360,130 @@ def delete_event(event_id: int, db: Session = Depends(get_db)):
     db.delete(db_event)
     db.commit()
     return None
+
+
+# ============================================
+# 数据统计（PR9 新功能）
+# ============================================
+
+@app.get("/stats")
+def get_stats(db: Session = Depends(get_db)):
+    """返回统计数据：本月总数、类型分布、完成率"""
+    now = datetime.now()
+    month_start = now.replace(day=1, hour=0, minute=0, second=0)
+    if now.month == 12:
+        month_end = now.replace(year=now.year + 1, month=1, day=1)
+    else:
+        month_end = now.replace(month=now.month + 1, day=1)
+    now_dt = now
+
+    all_events = db.query(Event).all()
+    month_events = db.query(Event).filter(
+        Event.event_time >= month_start,
+        Event.event_time < month_end,
+    ).all()
+
+    # 类型分布
+    type_count = {}
+    for e in month_events:
+        t = e.event_type or "其他"
+        type_count[t] = type_count.get(t, 0) + 1
+
+    # 本周事件
+    weekday = now_dt.weekday()
+    week_start = now_dt - timedelta(days=weekday)
+    week_start = week_start.replace(hour=0, minute=0, second=0)
+    week_events = [e for e in all_events if datetime.fromisoformat(e.event_time.isoformat()) >= week_start]
+
+    # 即将到来（未来 3 天）
+    three_days = now_dt + timedelta(days=3)
+    upcoming = [e for e in all_events if now_dt <= datetime.fromisoformat(e.event_time.isoformat()) <= three_days]
+
+    return {
+        "total": len(all_events),
+        "this_month": len(month_events),
+        "this_week": len(week_events),
+        "upcoming_3days": len(upcoming),
+        "completed": sum(1 for e in all_events if e.completed),
+        "completion_rate": round(
+            sum(1 for e in all_events if e.completed) / max(len(all_events), 1) * 100, 1
+        ),
+        "type_distribution": type_count,
+    }
+
+
+# ============================================
+# .ics 文件导出（PR9 新功能）
+# ============================================
+
+@app.get("/events/export")
+def export_ics(
+    event_type: str | None = Query(None),
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """导出事件为 .ics 格式（兼容 Apple/Google/Outlook 日历）
+
+    浏览器访问 /events/export 可直接下载 .ics 文件
+    """
+    query = db.query(Event)
+    if event_type:
+        query = query.filter(Event.event_type == event_type)
+    if start_date:
+        query = query.filter(Event.event_time >= datetime.fromisoformat(start_date))
+    if end_date:
+        query = query.filter(Event.event_time <= datetime.fromisoformat(end_date + "T23:59:59"))
+
+    events = query.order_by(Event.event_time.asc()).all()
+
+    # 构建 iCalendar 格式
+    lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//VoiceCalendar//CN", "CALSCALE:GREGORIAN"]
+    for e in events:
+        dt = e.event_time.strftime("%Y%m%dT%H%M%S")
+        lines.extend([
+            "BEGIN:VEVENT",
+            f"UID:{e.id}@voice-calendar",
+            f"DTSTART:{dt}",
+            f"SUMMARY:{e.title}",
+            f"DESCRIPTION:{e.description or ''}",
+            f"CATEGORIES:{e.event_type or '其他'}",
+            "END:VEVENT",
+        ])
+
+    # 重复事件标记
+    for i, e in enumerate(events):
+        if e.recurrence and e.recurrence != "none":
+            rrule_map = {"daily": "FREQ=DAILY", "weekly": "FREQ=WEEKLY", "monthly": "FREQ=MONTHLY"}
+            rrule = rrule_map.get(e.recurrence, "")
+            if rrule:
+                idx = 3 + i * 6 + 2
+                if lines[idx].startswith("DTSTART:"):
+                    lines.insert(idx + 1, f"RRULE:{rrule}")
+
+    lines.append("END:VCALENDAR")
+    ics_content = "\r\n".join(lines)
+
+    return Response(
+        content=ics_content,
+        media_type="text/calendar",
+        headers={"Content-Disposition": "attachment; filename=voice-calendar.ics"},
+    )
+
+
+# ============================================
+# 工具函数
+# ============================================
+
+def _event_to_dict(e: Event) -> dict:
+    return {
+        "id": e.id,
+        "title": e.title,
+        "event_time": e.event_time.isoformat(),
+        "event_type": e.event_type,
+        "description": e.description,
+        "remind": e.remind,
+        "completed": e.completed,
+        "recurrence": e.recurrence or "none",
+        "created_at": e.created_at.isoformat(),
+    }
