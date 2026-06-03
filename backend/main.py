@@ -159,10 +159,12 @@ async def speech_synthesize(req: SynthesizeRequest):
 
     try:
         audio_bytes = await synthesize(req.text, req.voice)
+        # HTTP 头部只支持 ASCII，中文需 URL 编码
+        from urllib.parse import quote
         return Response(
             content=audio_bytes,
             media_type="audio/mpeg",
-            headers={"X-Speech-Text": req.text[:100]},
+            headers={"X-Speech-Text": quote(req.text[:100], safe="")},
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
