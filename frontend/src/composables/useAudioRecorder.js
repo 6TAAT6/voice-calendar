@@ -8,21 +8,21 @@ import { ref } from 'vue'
 
 export function useAudioRecorder() {
   // ---- 状态变量 ----
-  const isRecording = ref(false)      // 是否正在录音
-  const audioBlob = ref(null)         // WebM 数据（用于试听回放）
-  const audioUrl = ref('')            // 试听链接
-  const pcmData = ref(null)           // PCM ArrayBuffer（发给后端）
-  const error = ref('')               // 错误信息
-  const duration = ref(0)             // 录音时长（秒）
-  const isProcessing = ref(false)     // 是否正在识别中
+  const isRecording = ref(false) // 是否正在录音
+  const audioBlob = ref(null) // WebM 数据（用于试听回放）
+  const audioUrl = ref('') // 试听链接
+  const pcmData = ref(null) // PCM ArrayBuffer（发给后端）
+  const error = ref('') // 错误信息
+  const duration = ref(0) // 录音时长（秒）
+  const isProcessing = ref(false) // 是否正在识别中
 
   // ---- 内部变量 ----
-  let mediaRecorder = null            // MediaRecorder 实例（生成试听文件）
-  let audioChunks = []                // WebM 片段缓存
-  let audioCtx = null                 // AudioContext（PCM 采集）
-  let pcmChunks = []                  // Int16Array 片段缓存
-  let startTime = null                // 开始录音的时间
-  let durationTimer = null            // 计时器
+  let mediaRecorder = null // MediaRecorder 实例（生成试听文件）
+  let audioChunks = [] // WebM 片段缓存
+  let audioCtx = null // AudioContext（PCM 采集）
+  let pcmChunks = [] // Int16Array 片段缓存
+  let startTime = null // 开始录音的时间
+  let durationTimer = null // 计时器
 
   /**
    * 开始录音
@@ -94,7 +94,7 @@ export function useAudioRecorder() {
         const int16 = new Int16Array(floatData.length)
         for (let i = 0; i < floatData.length; i++) {
           const s = Math.max(-1, Math.min(1, floatData[i]))
-          int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF
+          int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff
         }
         pcmChunks.push(int16)
       }

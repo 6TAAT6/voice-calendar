@@ -20,6 +20,13 @@ backend/.env
 *.pcm
 *.bin
 *.wav
+*.mp3
+
+# ===== 截图 & 临时图片 =====
+img*.png
+*.jpg
+*.jpeg
+*.gif
 
 # ===== 日志 & 缓存 =====
 *.log

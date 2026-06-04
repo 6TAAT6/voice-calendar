@@ -10,14 +10,9 @@
 
     <!-- ═══ 语音输入区域 ═══ -->
     <div class="voice-area">
-
       <!-- 阶段1: 录音 -->
       <div v-if="phase === 'idle' || phase === 'recording'" class="recorder-box">
-        <button
-          class="mic-btn"
-          :class="{ recording: isRecording }"
-          @click="handleMicClick"
-        >
+        <button class="mic-btn" :class="{ recording: isRecording }" @click="handleMicClick">
           <span class="mic-icon">{{ isRecording ? '⏹️' : '🎤' }}</span>
           <span class="mic-label">{{ isRecording ? '点击停止' : '点击录音' }}</span>
         </button>
@@ -41,7 +36,11 @@
         <div v-if="phase === 'correcting'" class="correct-box">
           <p class="correct-hint">🔧 请说出修正指令，例如："改成后天上午十点"</p>
           <div class="correct-actions">
-            <button class="btn btn-sm" :class="{ recording: isRecording }" @click="handleCorrectMic">
+            <button
+              class="btn btn-sm"
+              :class="{ recording: isRecording }"
+              @click="handleCorrectMic"
+            >
               {{ isRecording ? '⏹️ 停止修正' : '🎤 说出修正' }}
             </button>
             <button class="btn btn-sm btn-outline" @click="phase = 'recognized'">取消修正</button>
@@ -67,9 +66,11 @@
         <div class="result-label">日程确认：</div>
         <div class="parsed-detail">
           <div class="field"><span class="key">📌 标题</span>{{ parsedEvent.title }}</div>
-          <div class="field"><span class="key">🕐 时间</span>{{ formatTime(parsedEvent.event_time) }}</div>
+          <div class="field">
+            <span class="key">🕐 时间</span>{{ formatTime(parsedEvent.event_time) }}
+          </div>
           <div class="field"><span class="key">📂 类型</span>{{ parsedEvent.event_type }}</div>
-          <div class="field" v-if="parsedEvent.description">
+          <div v-if="parsedEvent.description" class="field">
             <span class="key">📝 备注</span>{{ parsedEvent.description }}
           </div>
         </div>
@@ -86,7 +87,7 @@
         </div>
 
         <div v-else class="result-actions">
-          <button class="btn btn-primary" @click="handleCreate(false)" :disabled="creating">
+          <button class="btn btn-primary" :disabled="creating" @click="handleCreate(false)">
             {{ creating ? '创建中...' : '✅ 确认创建' }}
           </button>
           <button class="btn btn-outline" @click="retry">🔄 重新录音</button>
@@ -122,7 +123,13 @@
 <script>
 import { ref, computed } from 'vue'
 import { useAudioRecorder } from '../composables/useAudioRecorder'
-import { recognizeSpeech, parseText, correctSchedule, synthesizeSpeech, createEvent } from '../api/index'
+import {
+  recognizeSpeech,
+  parseText,
+  correctSchedule,
+  synthesizeSpeech,
+  createEvent,
+} from '../api/index'
 
 export default {
   name: 'Home',
@@ -170,9 +177,11 @@ export default {
     function translateError(err) {
       const msg = err.message || String(err)
       if (msg.includes('timeout')) return '网络超时，请确认后端已启动后重试'
-      if (msg.includes('illegal access') || msg.includes('Unauthorized') || msg.includes('401')) return '讯飞授权失败，请检查密钥配置'
+      if (msg.includes('illegal access') || msg.includes('Unauthorized') || msg.includes('401'))
+        return '讯飞授权失败，请检查密钥配置'
       if (msg.includes('Websocket closed')) return '语音服务器连接中断，请重试'
-      if (msg.includes('Failed to fetch') || msg.includes('NetworkError')) return '无法连接服务器，请确认后端已启动'
+      if (msg.includes('Failed to fetch') || msg.includes('NetworkError'))
+        return '无法连接服务器，请确认后端已启动'
       if (msg.includes('DeepSeek')) return 'AI 解析失败，请再说一遍或换个说法'
       if (msg.includes('讯飞')) return msg
       return msg || '操作失败，请重试'
@@ -293,13 +302,16 @@ export default {
     async function handleCreate(forceCreate) {
       creating.value = true
       try {
-        const result = await createEvent({
-          title: parsedEvent.value.title,
-          event_time: parsedEvent.value.event_time,
-          event_type: parsedEvent.value.event_type || '其他',
-          description: parsedEvent.value.description || '',
-          remind: parsedEvent.value.remind !== false,
-        }, forceCreate)
+        const result = await createEvent(
+          {
+            title: parsedEvent.value.title,
+            event_time: parsedEvent.value.event_time,
+            event_type: parsedEvent.value.event_type || '其他',
+            description: parsedEvent.value.description || '',
+            remind: parsedEvent.value.remind !== false,
+          },
+          forceCreate,
+        )
 
         // 检查冲突
         if (!result.success && result.should_confirm) {
@@ -316,7 +328,6 @@ export default {
         const timeStr = `${dt.getMonth() + 1}月${dt.getDate()}日 ${String(dt.getHours()).padStart(2, '0')}点${String(dt.getMinutes()).padStart(2, '0')}分`
         const feedback = `已为您创建${timeStr}的${parsedEvent.value.title}`
         playVoiceFeedback(feedback)
-
       } catch (e) {
         error.value = translateError(e)
       } finally {
@@ -334,11 +345,23 @@ export default {
     }
 
     return {
-      isRecording, duration, phase, recognizedText, parsedEvent,
-      conflictWarnings, error, creating, ttsPlaying,
-      durationText, formatTime,
-      handleMicClick, handleParse, handleCreate, handleCorrectMic,
-      startCorrection, retry,
+      isRecording,
+      duration,
+      phase,
+      recognizedText,
+      parsedEvent,
+      conflictWarnings,
+      error,
+      creating,
+      ttsPlaying,
+      durationText,
+      formatTime,
+      handleMicClick,
+      handleParse,
+      handleCreate,
+      handleCorrectMic,
+      startCorrection,
+      retry,
     }
   },
 }
@@ -352,139 +375,300 @@ export default {
   padding: 40px 20px;
   text-align: center;
 }
-h1 { font-size: 28px; color: #333; }
-.subtitle { color: #666; margin-bottom: 30px; }
+h1 {
+  font-size: 28px;
+  color: #333;
+}
+.subtitle {
+  color: #666;
+  margin-bottom: 30px;
+}
 
 /* ===== 录音区域 ===== */
-.voice-area { margin: 10px 0; }
-.recorder-box { display: flex; flex-direction: column; align-items: center; }
+.voice-area {
+  margin: 10px 0;
+}
+.recorder-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
 
 /* ===== 录音按钮 ===== */
 .mic-btn {
-  width: 180px; height: 180px;
+  width: 180px;
+  height: 180px;
   border-radius: 50%;
   border: 4px solid #4a90d9;
   background: #e8f0fe;
   cursor: pointer;
   color: #4a90d9;
-  display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   gap: 8px;
   transition: all 0.3s;
   user-select: none;
 }
-.mic-btn:hover { background: #4a90d9; color: white; }
+.mic-btn:hover {
+  background: #4a90d9;
+  color: white;
+}
 .mic-btn.recording {
-  border-color: #e74c3c; background: #ffe8e6; color: #e74c3c;
+  border-color: #e74c3c;
+  background: #ffe8e6;
+  color: #e74c3c;
   animation: pulse 1.5s ease-in-out infinite;
 }
 @keyframes pulse {
-  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(231,76,60,0.4); }
-  50%      { transform: scale(1.05); box-shadow: 0 0 0 15px rgba(231,76,60,0); }
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.4);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 15px rgba(231, 76, 60, 0);
+  }
 }
-.mic-icon { font-size: 36px; }
-.mic-label { font-size: 14px; }
+.mic-icon {
+  font-size: 36px;
+}
+.mic-label {
+  font-size: 14px;
+}
 
 /* 计时器 */
-.timer { margin-top: 16px; font-size: 28px; font-weight: bold; color: #e74c3c; font-family: 'Courier New', monospace; }
-.hint { color: #999; margin-top: 16px; font-size: 14px; }
+.timer {
+  margin-top: 16px;
+  font-size: 28px;
+  font-weight: bold;
+  color: #e74c3c;
+  font-family: 'Courier New', monospace;
+}
+.hint {
+  color: #999;
+  margin-top: 16px;
+  font-size: 14px;
+}
 
 /* 加载动画 */
-.loading-box { padding: 40px; }
+.loading-box {
+  padding: 40px;
+}
 .spinner {
-  width: 40px; height: 40px;
+  width: 40px;
+  height: 40px;
   margin: 0 auto 16px;
   border: 4px solid #e0e0e0;
   border-top-color: #4a90d9;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
-@keyframes spin { to { transform: rotate(360deg); } }
-.processing-text { color: #4a90d9; font-size: 16px; }
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.processing-text {
+  color: #4a90d9;
+  font-size: 16px;
+}
 
 /* 识别结果 / 确认 */
 .result-box {
-  background: #f0f9ff; border: 1px solid #bae6fd;
-  border-radius: 12px; padding: 24px;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: 12px;
+  padding: 24px;
 }
-.result-label { font-size: 13px; color: #888; margin-bottom: 8px; text-align: left; }
+.result-label {
+  font-size: 13px;
+  color: #888;
+  margin-bottom: 8px;
+  text-align: left;
+}
 .result-text {
-  font-size: 20px; color: #333;
-  padding: 16px; background: white;
-  border-radius: 8px; margin-bottom: 20px;
+  font-size: 20px;
+  color: #333;
+  padding: 16px;
+  background: white;
+  border-radius: 8px;
+  margin-bottom: 20px;
 }
 
 /* AI 修正区域 */
 .correct-box {
   margin-bottom: 16px;
   padding: 12px;
-  background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
 }
-.correct-hint { color: #92400e; font-size: 14px; margin-bottom: 10px; }
-.correct-actions { display: flex; gap: 8px; justify-content: center; }
+.correct-hint {
+  color: #92400e;
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+.correct-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
 
 /* 解析详情 */
 .parsed-detail {
-  text-align: left; background: white;
-  border-radius: 8px; padding: 16px; margin-bottom: 20px;
+  text-align: left;
+  background: white;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 20px;
 }
-.field { padding: 6px 0; font-size: 15px; color: #333; border-bottom: 1px solid #f0f0f0; }
-.field:last-child { border-bottom: none; }
-.key { display: inline-block; width: 70px; color: #888; font-size: 14px; }
+.field {
+  padding: 6px 0;
+  font-size: 15px;
+  color: #333;
+  border-bottom: 1px solid #f0f0f0;
+}
+.field:last-child {
+  border-bottom: none;
+}
+.key {
+  display: inline-block;
+  width: 70px;
+  color: #888;
+  font-size: 14px;
+}
 
 /* 冲突警告 */
 .conflict-warning {
   margin-bottom: 16px;
   padding: 12px;
-  background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
 }
-.warning-item { color: #dc2626; font-size: 14px; padding: 4px 0; }
-.conflict-actions { display: flex; gap: 8px; justify-content: center; margin-top: 10px; }
+.warning-item {
+  color: #dc2626;
+  font-size: 14px;
+  padding: 4px 0;
+}
+.conflict-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 10px;
+}
 
 /* 按钮 */
-.result-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.result-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
 .btn {
-  padding: 10px 24px; border-radius: 8px;
-  font-size: 15px; cursor: pointer; border: none;
+  padding: 10px 24px;
+  border-radius: 8px;
+  font-size: 15px;
+  cursor: pointer;
+  border: none;
   transition: opacity 0.2s;
-  text-decoration: none; display: inline-block;
+  text-decoration: none;
+  display: inline-block;
 }
-.btn:hover { opacity: 0.85; }
-.btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.btn:hover {
+  opacity: 0.85;
+}
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 .btn-sm {
-  padding: 8px 16px; border-radius: 6px;
-  font-size: 13px; cursor: pointer;
-  background: #f0f0f0; border: 1px solid #ccc; color: #333;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  background: #f0f0f0;
+  border: 1px solid #ccc;
+  color: #333;
 }
-.btn-sm.recording { background: #ffe8e6; border-color: #e74c3c; color: #e74c3c; }
-.btn-primary { background: #4a90d9; color: white; }
-.btn-outline { background: white; color: #4a90d9; border: 1px solid #4a90d9; }
+.btn-sm.recording {
+  background: #ffe8e6;
+  border-color: #e74c3c;
+  color: #e74c3c;
+}
+.btn-primary {
+  background: #4a90d9;
+  color: white;
+}
+.btn-outline {
+  background: white;
+  color: #4a90d9;
+  border: 1px solid #4a90d9;
+}
 
 /* 创建成功 */
 .done-box {
-  background: #f0fdf4; border: 1px solid #bbf7d0;
-  border-radius: 12px; padding: 32px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 12px;
+  padding: 32px;
 }
-.done-icon { font-size: 48px; }
-.done-text { font-size: 18px; color: #16a34a; margin: 12px 0 20px; }
-.tts-status { color: #4a90d9; font-size: 14px; }
+.done-icon {
+  font-size: 48px;
+}
+.done-text {
+  font-size: 18px;
+  color: #16a34a;
+  margin: 12px 0 20px;
+}
+.tts-status {
+  color: #4a90d9;
+  font-size: 14px;
+}
 
 /* 错误 */
 .error-toast {
-  margin-top: 16px; padding: 12px 16px;
-  background: #fef2f2; border: 1px solid #fecaca;
-  border-radius: 8px; color: #dc2626; font-size: 14px;
-  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  color: #dc2626;
+  font-size: 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
-.close-btn { background: none; border: none; font-size: 20px; cursor: pointer; color: #dc2626; }
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: #dc2626;
+}
 
 /* 快捷入口 */
-.quick-links { display: flex; gap: 16px; justify-content: center; margin-top: 40px; }
+.quick-links {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  margin-top: 40px;
+}
 .card {
-  padding: 20px 30px; background: #f8f9fa;
-  border-radius: 12px; text-decoration: none; color: #333;
-  font-size: 16px; border: 1px solid #e0e0e0;
+  padding: 20px 30px;
+  background: #f8f9fa;
+  border-radius: 12px;
+  text-decoration: none;
+  color: #333;
+  font-size: 16px;
+  border: 1px solid #e0e0e0;
   transition: transform 0.2s;
 }
-.card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
 </style>

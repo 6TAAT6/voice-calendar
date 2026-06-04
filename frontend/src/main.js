@@ -4,8 +4,8 @@
 
 import { createApp } from 'vue'
 import App from './App.vue'
-import router from './router'   // 导入路由配置
+import router from './router' // 导入路由配置
 
-const app = createApp(App)       // 创建 Vue 应用实例
-app.use(router)                  // 装上路由器（让页面之间可以跳转）
-app.mount('#app')                // 挂载到 index.html 里的 <div id="app">
+const app = createApp(App) // 创建 Vue 应用实例
+app.use(router) // 装上路由器（让页面之间可以跳转）
+app.mount('#app') // 挂载到 index.html 里的 <div id="app">

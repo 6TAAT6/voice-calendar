@@ -8,9 +8,13 @@
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 
-## Demo 视频
+## 🎬 Demo 视频
 
-> 演示视频链接（待添加）
+> **🔗 视频地址**：[点击观看](https://你的视频链接)  
+> 平台：bilibili / 云盘  
+> 内容：完整展示语音创建日程、AI 对话修正、三视图日历、搜索筛选、ics 导出、提醒通知等核心功能
+
+*(录完视频后替换上方链接)*
 
 
 ## 核心功能
@@ -112,17 +116,19 @@ npm run dev
 
 ## Git 分支
 
-| 分支 | 功能 |
-|------|------|
-| pr1-frontend-scaffold | Vue 前端骨架 |
-| pr2-backend-scaffold | FastAPI 后端骨架 |
-| pr3-event-crud-api | 事件增删改查 |
-| pr4-voice-input | 前端录音 + 讯飞接口 |
-| pr5-nlp-parser | DeepSeek 语义解析 |
-| pr6-calendar-reminder | 月视图日历 + 浏览器提醒 |
-| pr7-optimization | 工程规范化 + 安全加固 |
-| pr8-tts-smart | TTS + AI修正 + 冲突检测 + 一键启动 |
-| pr9-all-features | 三视图 + 搜索 + 统计 + 导出 + 重复事件 |
+> 分支命名规范：`feature/xxx`（新功能）`fix/xxx`（修bug）`chore/xxx`（工程杂项）`docs/xxx`（文档）
+
+| 分支 | 类型 | 功能 |
+|------|------|------|
+| feature/frontend-scaffold | 功能 | Vue 前端骨架 |
+| feature/backend-scaffold | 功能 | FastAPI 后端骨架 |
+| feature/event-crud-api | 功能 | 事件增删改查 |
+| feature/voice-input | 功能 | 前端录音 + 讯飞接口 |
+| feature/nlp-parser | 功能 | DeepSeek 语义解析 |
+| feature/calendar-reminder | 功能 | 月视图日历 + 浏览器提醒 |
+| chore/optimization | 工程 | 工程规范化 + 安全加固 |
+| feature/tts-smart | 功能 | TTS + AI修正 + 冲突检测 + 一键启动 |
+| feature/all-features | 功能 | 三视图 + 搜索 + 统计 + 导出 + 重复事件 |
 
 
 ## 注意事项
